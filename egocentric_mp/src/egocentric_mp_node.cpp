@@ -18,6 +18,49 @@ std::vector<cv::Vec4i> lines;
 
 cv::Point2f target, targetDirection;
 
+float pointLineDistance(const cv::Point2f &point, const cv::Vec4i line)
+{
+    cv::Point pt = point;
+
+    // take 2 points on the line
+    cv::Point2f begin(line.val[2],line.val[3]);
+    cv::Point2f end(line.val[0],line.val[1]);
+
+    // translate to the origin
+    pt = point - begin;
+    end = end - begin;
+
+    double area = std::abs(pt.cross(end));
+    return area / cv::norm(end);
+}
+
+int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4i> &linesVector)
+{
+    float minDistance = std::numeric_limits<float>::max();
+    int nearestLineIndex = -1;
+
+    int count = 0;
+    for (cv::Vec4i line : linesVector)
+    {
+        // compute line-point distance
+        float currentDistance = pointLineDistance(point, line);
+
+        std::cout << currentDistance << " - ";
+
+        if (currentDistance < minDistance)
+        {
+            nearestLineIndex = count;
+            minDistance = currentDistance;
+        }
+
+        count = count + 1;
+    }
+
+    std::cout << std::endl << minDistance << std::endl;
+
+    return nearestLineIndex;
+}
+
 void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
     scannedData = cv::Mat::zeros(cv::Size(800,800), CV_8UC1);
@@ -35,19 +78,33 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
         angle = angle + msg->angle_increment;
     }
 
-    HoughLinesP( scannedData, lines, 1, CV_PI/180, 20, 20, 20 );
+    HoughLinesP( scannedData, lines, 1.5, CV_PI/90, 30, 35, 25 );
+
+    int idx = nearestLineIndex(target*factor+center, lines);
+
+    std::cout << idx << " - (" << target.x << "," << target.y << ")" << std::endl;
 
     cv::Mat linesColor;
     cv::cvtColor(scannedData, linesColor, CV_GRAY2BGR);
 
+    cv::circle(linesColor, cv::Point2f(0,0)*factor+center, 3, cv::Scalar(200,200,200),3);
     for( size_t i = 0; i < lines.size(); i++ )
     {
       cv::Vec4i l = lines[i];
       cv::line( linesColor,
-                cv::Point(l[0], l[1]),
-                cv::Point(l[2], l[3]),
-                cv::Scalar(0,0,255), 3, CV_AA);
+                cv::Point2f(l[0], l[1]),
+                cv::Point2f(l[2], l[3]),
+                i==idx?cv::Scalar(0,255,0):cv::Scalar(0,0,255),
+                1, CV_AA );
+      cv::circle(linesColor, cv::Point2f(l[0], l[1]), 2, cv::Scalar(200,200,100));
+      cv::circle(linesColor, cv::Point2f(l[2], l[3]), 2, cv::Scalar(100,200,200));
     }
+
+    // Move the target 1mt in front of the line
+    cv::Vec2f lineVector((lines[idx])[0] - (lines[idx])[2],
+                         (lines[idx])[1] - (lines[idx])[3]);
+    cv::Vec2f ortoLineVector(-lineVector.);
+
 
     cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
 
@@ -118,23 +175,30 @@ int main(int argc, char** argv)
         //cmd_vel_pub.publish(base_msg);
 
         ros::Time a = ros::Time::now();
-        ros::Duration offset(500);
+        ros::Duration offset(0.5);
+        ros::Duration timeout(0.1);
+        bool isDatamatrix;
 
-        a -= offset;
+        while (!isDatamatrix)
+        {
 
-        ros::Duration timeout(1000);
-        bool isDatamatrix = tfListener.waitForTransform("/camera_link",
-                                                        "/datamatrix_frame",
-                                                        a,
-                                                        timeout);
+            a = ros::Time::now() - offset;
+            isDatamatrix = tfListener.waitForTransform("camera_link",
+                                                       "datamatrix_frame",
+                                                       a,
+                                                       timeout);
+
+            ROS_INFO("no transform yet");
+        }
 
         if (isDatamatrix)
         {
 
             ROS_INFO("Setting target");
-            std::cout << "st" << std::endl;
-            tfListener.lookupTransform("/camera_link",
-                                       "/datamatrix_frame",
+
+            a = ros::Time::now() - offset;
+            tfListener.lookupTransform("camera_link",
+                                       "datamatrix_frame",
                                        a,
                                        datamatrix_to_base_link);
 
@@ -151,7 +215,6 @@ int main(int argc, char** argv)
         }
         else
         {
-            std::cout << "bad" << std::endl;
             ROS_INFO("tf not available");
         }
 
