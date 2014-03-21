@@ -103,7 +103,9 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     // Move the target 1mt in front of the line
     cv::Vec2f lineVector((lines[idx])[0] - (lines[idx])[2],
                          (lines[idx])[1] - (lines[idx])[3]);
-    cv::Vec2f ortoLineVector(-lineVector.);
+    cv::Vec2f ortoLineVector(-lineVector.val[1], lineVector.val[0]);
+    ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);
+
 
 
     cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
