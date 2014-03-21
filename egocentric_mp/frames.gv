@@ -1,0 +1,25 @@
+digraph G {
+"Pioneer3AT/odom" -> "Pioneer3AT/base_link"[label="Broadcaster: /Pioneer3AT_rosaria\nAverage rate: 10.199 Hz\nMost recent transform: 1395326719.737 \nBuffer length: 4.902 sec\n"];
+"camera_link" -> "camera_rgb_frame"[label="Broadcaster: /camera_base_link1\nAverage rate: 10.187 Hz\nMost recent transform: 1395326719.844 \nBuffer length: 4.908 sec\n"];
+"top_plate" -> "camera_link"[label="Broadcaster: /tf_datamatrix\nAverage rate: 10.191 Hz\nMost recent transform: 1395326719.812 \nBuffer length: 4.808 sec\n"];
+"Pioneer3AT/base_link" -> "top_plate"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"front_left_axle" -> "front_left_hub"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"Pioneer3AT/base_link" -> "front_left_axle"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 10.204 Hz\nMost recent transform: 1395326719.836 \nBuffer length: 4.900 sec\n"];
+"front_left_hub" -> "front_left_wheel"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"front_right_axle" -> "front_right_hub"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"Pioneer3AT/base_link" -> "front_right_axle"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 10.204 Hz\nMost recent transform: 1395326719.836 \nBuffer length: 4.900 sec\n"];
+"front_right_hub" -> "front_right_wheel"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"Pioneer3AT/base_link" -> "front_sonar"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"rear_left_axle" -> "rear_left_hub"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"Pioneer3AT/base_link" -> "rear_left_axle"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 10.204 Hz\nMost recent transform: 1395326719.836 \nBuffer length: 4.900 sec\n"];
+"rear_left_hub" -> "rear_left_wheel"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"rear_right_axle" -> "rear_right_hub"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"Pioneer3AT/base_link" -> "rear_right_axle"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 10.204 Hz\nMost recent transform: 1395326719.836 \nBuffer length: 4.900 sec\n"];
+"rear_right_hub" -> "rear_right_wheel"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"Pioneer3AT/base_link" -> "rear_sonar"[label="Broadcaster: /Pioneer3AT_tf_broadcaster\nAverage rate: 20.204 Hz\nMost recent transform: 1395326720.300 \nBuffer length: 4.949 sec\n"];
+"camera_depth_frame" -> "camera_depth_optical_frame"[label="Broadcaster: /camera_base_link2\nAverage rate: 10.187 Hz\nMost recent transform: 1395326719.868 \nBuffer length: 4.908 sec\n"];
+"camera_link" -> "camera_depth_frame"[label="Broadcaster: /camera_base_link\nAverage rate: 10.186 Hz\nMost recent transform: 1395326719.815 \nBuffer length: 4.810 sec\n"];
+"camera_rgb_frame" -> "camera_rgb_optical_frame"[label="Broadcaster: /camera_base_link3\nAverage rate: 10.187 Hz\nMost recent transform: 1395326719.868 \nBuffer length: 4.908 sec\n"];
+"camera_rgb_optical_frame" -> "datamatrix_frame"[label="Broadcaster: /xtion_datamatrix\nAverage rate: 29.366 Hz\nMost recent transform: 1395326719.805 \nBuffer length: 4.938 sec\n"];
+"top_plate" -> "hokuyo"[label="Broadcaster: /tf_Hokuyo\nAverage rate: 10.187 Hz\nMost recent transform: 1395326719.882 \nBuffer length: 4.908 sec\n"];
+}

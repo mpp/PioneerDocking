@@ -1,0 +1,221 @@
+%YAML:1.0
+
+###############################################################################
+##                                                                           ##
+## Configuration file for the navigation package                             ##
+##                                                                           ##
+###############################################################################
+
+##---------------------------------------------------------------------------##
+## Path and filename of the log file
+##---------------------------------------------------------------------------##
+logparser:
+    # Frame per second of the log playback
+    waitkey: 10
+
+    # If empty the sw uses real sensors
+    #
+    # Opzioni path
+    # -- Giorgio
+    # /home/pantano/Desktop/projectg_log/ Riempi qua
+    # -- Portatile
+    # /home/mpp/DODICH/Registrazioni/
+    # -- Laboratorio
+    # /home/dodich/DODICH/Registrazioni/
+    path: /home/dodich/DODICH/Registrazioni/
+
+    # Opzioni
+    #
+    # -- Caso 1 - fine filare
+    # 02161602_ls_sick.csv
+    # -- Caso 2 - filare a sinistra
+    # 01051511_ls_sick.csv
+    # -- Caso 3 - rotazione a sinistra
+    # 12011112_ls_sx_sick.csv
+    # -- Caso 4 - interno del box
+    # 02161159_ls_sick.csv
+    # -- Caso 5 - box-filare-testate
+    # 02180842_ls_sick.csv
+    # -- Caso 6 - nuova rotazione
+    # 02281618_ls_sick.csv
+    # -- Caso 7 - rotazione 28 febbraio
+    # 03031520_ls_sick.csv
+    # -- Caso 8 - rotazione a destra
+    # 02141035_ls_sick_dx.csv
+    # -- Caso 8 - rotazione a destra marzo
+    # 03051425_ls_sick.csv
+    # -- Casi 9 - rotazione destra 5 marzo
+    # 03051653 -> K = 6 stretta
+    # 03051657 -> K = 6 stretta
+    # 03051700 -> K = 6 si e' bloccato dopo 3/5 gradi senza continuare la manovra
+    # 03051701 -> K = 6 si e' bloccato dopo circa 20/30 gradi senza continuare la manovra
+    # -- Casi 10 - test rotazione destra 6 marzo
+    # 03061053 -> k = 4.2, partenza più distante, errore opencv
+    # 03061047 -> k = 4.5, partenza da ~60°, si è fermato dopo ~90°
+    # 03061044 -> k = 4.5, si ferma subito
+    # 03061042 -> come sopra
+    # 03061034 -> k = 5, partenza ritardata, ruota interna bloccata
+    # 03061025 -> k = 4, largo
+    # 03061024 -> k = 5.5, stretto
+    # -- Casi 11
+    # 03061457
+    # 03061556
+    # 03061723_ls_sick
+    # -- Casi 12 7 marzo
+    # 03071340
+    # 03071346
+    # 03071335_ls_sick
+    # 03071442 610
+    # 03071556_610
+    # 03071547
+    # -- Caso 13 8 marzo
+    # 03081003_ls_sick    
+    # -- Casi 14 9 marzo
+    # 03091143_ls_sick
+    # 03091147_ls_sick
+    # -- Casi 15 10 marzo
+    # 03101104_ls_sick
+    # -- Casi 16 10 marzo pm
+    # 03101354_ls_sick
+    # 03101407_ls_sick
+    # 03101406_ls_sick
+    # 03101354_ls_sick
+    # 03101350_ls_sick
+    # 03101556_ls_sick 910
+    # 03101104_ls_sick
+    # -- Casi 17 12 marzo mattina
+    # 03120840_ls_sick test su vigneto largo, inseguimento filare a destra
+    # -- Casi 18 12 marzo pomeriggio
+    # 03121400_ls_sick
+    # 03121410_ls_sick
+    # -- Casi 19 16 marzo mattina Giorgio
+    # 03160849_ls_sick dove non ha seguito il filare partendo da fermo. Il dodich era leggermente non allineato.
+    # 03160843_ls_sick dove la manovra a sinistra e' andata bene anche se troppo stretta e influenzata dai rumori del filare.
+    # -- Casi 29 16 marzo sera Giorgio
+    # 03161815_ls_sick
+    # 03161810_ls_sick
+    # 03161759_ls_sick
+    file: "03161810_ls_sick.csv"
+
+
+    # Here goes the operation, it can be
+    # 001L
+    # 001R
+    # ...
+    operation: "003R"
+##---------------------------------------------------------------------------##
+## Parameters for the laser scan raw filter
+##---------------------------------------------------------------------------##
+laserscanfilter:
+    # minimum distance threshold (mt)
+    minDistance: 0.3 
+
+    # minimum distance threshold (mt)
+    maxDistance: 12.0 
+
+    # minimum angle of scan (deg) - 0° is in front of the scanner
+    minAngle: -2.20
+
+    # maximum angle of scan (deg) - 0° is in front of the scanner
+    maxAngle: 2.20 
+
+##---------------------------------------------------------------------------##
+## Parameters for the poles extractor class
+##---------------------------------------------------------------------------##
+poleExtractor:
+    # the maximum distance between two points of the same pole
+    clusterTolerance: 0.25 
+
+    # the minimum number of point to define a pole
+    minClusterSize: 2 
+
+    # the maximum number of point that can rely to a pole
+    maxClusterSize: 30 
+
+    # the maximum distance between 2 poles candidates to be considered the same pole, for tracking purposes
+    maximumPolesDistance: 0.25 
+
+    # for the FLANN Hierarchical clustering (deprecated)
+    branchingFactor: 10 
+
+    # for the FLANN Hierarchical clustering (deprecated)
+    iterations: 60 
+
+##---------------------------------------------------------------------------##
+## Parameters for the line extractor class
+##---------------------------------------------------------------------------##
+lineExtractor:
+    # the maximum distance (mt) between two poles that are assigned to the same line
+    maxPoleDistance: 3.5 
+    maxDistanceFromLastLine: 1.0
+    reps: 0.0001 # Sufficient accuracy for the radius (distance between the coordinate origin and the line).
+    aeps: 0.0001 # Sufficient accuracy for the angle. 0.01 would be a good default value for reps and aeps.
+    minLineSize: 4 # !!!!MUST BE >= 4!!! Minimum number of poles for a line, fitLine does not work with values < 4
+    epsilon: 0.6
+
+##---------------------------------------------------------------------------##
+## Parameters for the navigation planners
+##---------------------------------------------------------------------------##
+globalMP:
+    # maximum linear velocity m/s
+    maxV: 2.0 
+
+    # maximum angular velocity rad/s
+    maxOmega: 2.0
+
+# Following the indication of: http://www.inaut.unsj.edu.ar/Files/Ca1277_03.pdf 
+lineFollower: 
+    desiredDistance: 1.7 # desired distance from the line
+    desiredTheta: 0.0 # desired angle divergence from the line
+
+    ## !!BEWARE!! that changes in maxV and maxOmega involve changes in theese variables
+    a1: 2 
+    a2: 2 
+    k1: 1 # k1 + k2*u_max <= omega_max, nel caso di (u_max, omega_max) = (2, 2)
+    k2: 0.5 
+    limitMultiplier: 4
+
+    minHeadPoleDistance: 1.5 # When the head pole is nearer than this threshold the robot have reched the end of the line
+    
+# Following the indication of: http://web.eecs.umich.edu/~kuipers/papers/Park-icra-11.pdf
+Uturn:
+    k1: 0.2
+    k2: 5
+    k3:  0.5
+    beta: 0.4
+    lambda: 2
+    headPoleThreshold: 2.5
+    endEpsilon: 1.0
+    endGamma: 0.2
+
+##---------------------------------------------------------------------------##
+## GUI parameters
+##---------------------------------------------------------------------------##
+gui:
+    wHeight: 700
+    wWidth: 1000
+    wFactor: 40 # 1 real meter = factor*pixels in the GUI
+    wFontScale: 0.5
+
+    center: [ 615, 350 ]
+
+    poleIDOffset: [ -20.0, -7.0 ]
+    poleRadius: 6
+    lineThickness: 3
+
+    compassWHXY: [ 100, 100, 115, 315 ]
+    compassRadius: 45
+
+    colors: # BGR not RGB
+        red: [ 50,50,255,0 ]
+        black: [ 0,0,0,0 ]
+        white: [ 255,255,255,0 ]
+        darkGray: [ 80,80,80,0 ]
+        lightGray: [ 190,190,190,0 ]
+        blue: [ 255,50,50,0 ]
+        green: [ 50,200,50,0 ]
+        lightGreen: [ 150,255,150,0 ]
+        lightRed: [ 150,150,255,0 ]
+        yellow: [ 50,255,255,0 ]   
+
+## Here can go other parameters
