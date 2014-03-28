@@ -11,7 +11,7 @@
 #include "endlineturnmp.h"
 
 cv::Mat scannedData;
-float factor = 40.0f; // 1mt = 40px
+float factor = 80.0f; // 1mt = 40px
 float imageSize = 800;
 cv::Point2f center(400,400);
 std::vector<cv::Vec4i> lines;
@@ -30,7 +30,7 @@ float pointLineDistance(const cv::Point2f &point, const cv::Vec4i line)
     pt = point - begin;
     end = end - begin;
 
-    double area = std::abs(pt.cross(end));
+    double area = pt.cross(end);
     return area / cv::norm(end);
 }
 
@@ -43,7 +43,7 @@ int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4i> &lin
     for (cv::Vec4i line : linesVector)
     {
         // compute line-point distance
-        float currentDistance = pointLineDistance(point, line);
+        float currentDistance = std::abs(pointLineDistance(point, line));
 
         std::cout << currentDistance << " - ";
 
@@ -61,8 +61,39 @@ int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4i> &lin
     return nearestLineIndex;
 }
 
+cv::Point2f getSnapPointToLine(const cv::Point2f &point, const cv::Vec4i line)
+{
+    float distance = pointLineDistance(point, line);
+
+    cv::Point2f A(line[0],line[1]);
+
+    cv::Vec2f A_pointVector(point - A);
+
+    float A_pointDistance = cv::norm(A_pointVector);
+
+    float A_snapDistance = std::sqrt(A_pointDistance*A_pointDistance - distance*distance);
+
+    cv::Vec2f lineVector(line[2]-line[0], line[3]-line[1]);
+    lineVector = A_snapDistance * cv::normalize(lineVector);
+
+    return cv::Point2f(A.x + lineVector.val[0], A.y + lineVector.val[1]);
+}
+
+void morphClosure(const cv::Mat &src, cv::Mat &dst)
+{
+    int dilationType = cv::MORPH_RECT;
+    int dilationSize = 3;
+    cv::Mat element = getStructuringElement( dilationType,
+                                         cv::Size( 2*dilationSize + 1, 2*dilationSize+1 ),
+                                         cv::Point( dilationSize, dilationSize ) );
+    cv::Mat tmp;
+    cv::dilate(src, tmp, element);
+    cv::erode(tmp, dst, element);
+}
+
 void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
+    // get laser points
     scannedData = cv::Mat::zeros(cv::Size(800,800), CV_8UC1);
 
     float angle = msg->angle_min;
@@ -78,12 +109,20 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
         angle = angle + msg->angle_increment;
     }
 
-    HoughLinesP( scannedData, lines, 1.5, CV_PI/90, 30, 35, 25 );
+    // perform a closure (dilation+erosion)
+    cv::Mat closedScannedData;
+    morphClosure(scannedData, closedScannedData);
 
+    // extract lines from laser points
+    HoughLinesP( closedScannedData, lines, 2, CV_PI/90, 80, 25, 50 );
+
+    // get nearest line index
     int idx = nearestLineIndex(target*factor+center, lines);
+    float distance = pointLineDistance(target*factor+center, lines[idx]);
 
-    std::cout << idx << " - (" << target.x << "," << target.y << ")" << std::endl;
+    std::cout << idx << " - (" << target.x << "," << target.y << ")" << " - " << lines[idx] << " - " << distance << std::endl;
 
+    // plot lines, points...
     cv::Mat linesColor;
     cv::cvtColor(scannedData, linesColor, CV_GRAY2BGR);
 
@@ -100,15 +139,20 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
       cv::circle(linesColor, cv::Point2f(l[2], l[3]), 2, cv::Scalar(100,200,200));
     }
 
-    // Move the target 1mt in front of the line
+    /// Move the target 1mt in front of the line
+    /*// get an ortogonal vector
     cv::Vec2f lineVector((lines[idx])[0] - (lines[idx])[2],
                          (lines[idx])[1] - (lines[idx])[3]);
+    /// TODO: check 0 values...
     cv::Vec2f ortoLineVector(-lineVector.val[1], lineVector.val[0]);
-    ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);
+    ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);*/
 
+    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(250,50,250),3);
 
+    // snap target to the nearest line
+    target = getSnapPointToLine(target*factor+center, lines[idx]);
 
-    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
+    cv::circle(linesColor, target, 3, cv::Scalar(255,0,0),3);
 
     cv::imshow("lines", linesColor);
     cv::waitKey(33);
@@ -178,8 +222,8 @@ int main(int argc, char** argv)
 
         ros::Time a = ros::Time::now();
         ros::Duration offset(0.5);
-        ros::Duration timeout(0.1);
-        bool isDatamatrix;
+        ros::Duration timeout(0.15);
+        bool isDatamatrix = false;
 
         while (!isDatamatrix)
         {
@@ -213,7 +257,7 @@ int main(int argc, char** argv)
             b = datamatrix_to_base_link(a);
 
             target.x = b.x();
-            target.y = b.y();
+            target.y = -1 * b.y();
         }
         else
         {
