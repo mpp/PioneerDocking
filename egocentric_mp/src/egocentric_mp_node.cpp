@@ -14,7 +14,7 @@ cv::Mat scannedData;
 float factor = 80.0f; // 1mt = 40px
 float imageSize = 800;
 cv::Point2f center(400,400);
-std::vector<cv::Vec4i> lines;
+std::vector<cv::Vec4f> lines;
 
 cv::Point2f target, targetDirection;
 
@@ -34,18 +34,42 @@ float pointLineDistance(const cv::Point2f &point, const cv::Vec4i line)
     return area / cv::norm(end);
 }
 
-int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4i> &linesVector)
+std::vector<cv::Vec4f> extractLines(const cv::Mat &scannedData)
+{
+    std::vector<cv::Vec4i> lines_i;
+    std::vector<cv::Vec4f> lines_f;
+    // Extract lines with the Hough transform
+    HoughLinesP( scannedData, lines_i, 2, CV_PI/90, 80, 25, 50 );
+
+    // Move lines from the "image" frame to the robot frame
+    for (cv::Vec4f line : lines_i)
+    {
+        cv::Vec4f new_line_f;
+        // Move the first point
+        new_line_f.val[0] = (line.val[0] - center.x) / factor;
+        new_line_f.val[1] = (line.val[1] - center.y) / factor;
+        // Move the first point
+        new_line_f.val[2] = (line.val[2] - center.x) / factor;
+        new_line_f.val[3] = (line.val[3] - center.y) / factor;
+
+        lines_f.push_back(new_line_f);
+    }
+
+    return lines_f;
+}
+
+int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4f> &linesVector)
 {
     float minDistance = std::numeric_limits<float>::max();
     int nearestLineIndex = -1;
 
     int count = 0;
-    for (cv::Vec4i line : linesVector)
+    for (cv::Vec4f line : linesVector)
     {
         // compute line-point distance
         float currentDistance = std::abs(pointLineDistance(point, line));
 
-        std::cout << currentDistance << " - ";
+        //std::cout << currentDistance << " - ";
 
         if (currentDistance < minDistance)
         {
@@ -56,12 +80,12 @@ int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4i> &lin
         count = count + 1;
     }
 
-    std::cout << std::endl << minDistance << std::endl;
+    //std::cout << std::endl << minDistance << std::endl;
 
     return nearestLineIndex;
 }
 
-cv::Point2f getSnapPointToLine(const cv::Point2f &point, const cv::Vec4i line)
+cv::Point2f getSnapPointToLine(const cv::Point2f &point, const cv::Vec4f line)
 {
     float distance = pointLineDistance(point, line);
 
@@ -114,13 +138,13 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     morphClosure(scannedData, closedScannedData);
 
     // extract lines from laser points
-    HoughLinesP( closedScannedData, lines, 2, CV_PI/90, 80, 25, 50 );
+    lines = extractLines(closedScannedData);
 
     // get nearest line index
-    int idx = nearestLineIndex(target*factor+center, lines);
-    float distance = pointLineDistance(target*factor+center, lines[idx]);
+    int idx = nearestLineIndex(target, lines);
+    float distance = pointLineDistance(target, lines[idx]);
 
-    std::cout << idx << " - (" << target.x << "," << target.y << ")" << " - " << lines[idx] << " - " << distance << std::endl;
+    //std::cout << idx << " - (" << target.x << "," << target.y << ")" << " - " << lines[idx] << " - " << distance << std::endl;
 
     // plot lines, points...
     cv::Mat linesColor;
@@ -129,30 +153,37 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     cv::circle(linesColor, cv::Point2f(0,0)*factor+center, 3, cv::Scalar(200,200,200),3);
     for( size_t i = 0; i < lines.size(); i++ )
     {
-      cv::Vec4i l = lines[i];
+      cv::Vec4f l = lines[i];
       cv::line( linesColor,
-                cv::Point2f(l[0], l[1]),
-                cv::Point2f(l[2], l[3]),
+                cv::Point2f(l[0], l[1])*factor+center,
+                cv::Point2f(l[2], l[3])*factor+center,
                 i==idx?cv::Scalar(0,255,0):cv::Scalar(0,0,255),
                 1, CV_AA );
-      cv::circle(linesColor, cv::Point2f(l[0], l[1]), 2, cv::Scalar(200,200,100));
-      cv::circle(linesColor, cv::Point2f(l[2], l[3]), 2, cv::Scalar(100,200,200));
+      cv::circle(linesColor, cv::Point2f(l[0], l[1])*factor+center, 2, cv::Scalar(200,200,100));
+      cv::circle(linesColor, cv::Point2f(l[2], l[3])*factor+center, 2, cv::Scalar(100,200,200));
     }
-
-    /// Move the target 1mt in front of the line
-    /*// get an ortogonal vector
-    cv::Vec2f lineVector((lines[idx])[0] - (lines[idx])[2],
-                         (lines[idx])[1] - (lines[idx])[3]);
-    /// TODO: check 0 values...
-    cv::Vec2f ortoLineVector(-lineVector.val[1], lineVector.val[0]);
-    ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);*/
 
     cv::circle(linesColor, target*factor+center, 3, cv::Scalar(250,50,250),3);
 
     // snap target to the nearest line
-    target = getSnapPointToLine(target*factor+center, lines[idx]);
+    target = getSnapPointToLine(target, lines[idx]);
 
-    cv::circle(linesColor, target, 3, cv::Scalar(255,0,0),3);
+    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
+
+    /// Move the target 1mt in front of the line
+    // get an ortogonal vector
+    cv::Vec2f lineVector((lines[idx])[0] - (lines[idx])[2],
+                         (lines[idx])[1] - (lines[idx])[3]);
+    /// TODO: check 0 values...
+    cv::Vec2f ortoLineVector(-lineVector.val[1], lineVector.val[0]);
+    ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);
+
+    target = target + cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+
+    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(0,255,0),3);
+
+    std::cout << "target distance: " << cv::norm(target) << std::endl;
+
 
     cv::imshow("lines", linesColor);
     cv::waitKey(33);
@@ -247,7 +278,6 @@ int main(int argc, char** argv)
                                        "datamatrix_frame",
                                        a,
                                        datamatrix_to_base_link);
-
 
             tf::Point a,b;
 
