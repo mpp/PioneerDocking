@@ -11,12 +11,18 @@
 #include "endlineturnmp.h"
 
 cv::Mat scannedData;
-float factor = 80.0f; // 1mt = 40px
+float factor = 160.0f; // 1mt = 40px
 float imageSize = 800;
 cv::Point2f center(400,400);
 std::vector<cv::Vec4f> lines;
 
 cv::Point2f target, targetDirection;
+
+// Kalman filter for target tracking
+cv::KalmanFilter kfTarget;
+cv::Mat_<float> kfState;
+cv::Mat_<float> kfMeasurement;
+cv::Mat kfProcessNoise;
 
 float pointLineDistance(const cv::Point2f &point, const cv::Vec4i line)
 {
@@ -39,7 +45,7 @@ std::vector<cv::Vec4f> extractLines(const cv::Mat &scannedData)
     std::vector<cv::Vec4i> lines_i;
     std::vector<cv::Vec4f> lines_f;
     // Extract lines with the Hough transform
-    HoughLinesP( scannedData, lines_i, 2, CV_PI/90, 80, 25, 50 );
+    cv::HoughLinesP( scannedData, lines_i, 4, CV_PI/90, 100, 25, 50 );
 
     // Move lines from the "image" frame to the robot frame
     for (cv::Vec4f line : lines_i)
@@ -127,7 +133,10 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
         if (range >= msg->range_min && range <= msg->range_max)
         {
             cv::Point2f pt(range * std::cos(angle), -1 * range * std::sin(angle));
-            scannedData.at<uchar>(pt*factor + center) = 255;
+            pt = pt * factor + center;
+
+            if (pt.x >= 0 && pt.x <= scannedData.cols && pt.y >= 0 && pt.y <= scannedData.rows)
+                scannedData.at<uchar>(pt) = 255;
         }
 
         angle = angle + msg->angle_increment;
@@ -165,10 +174,34 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 
     cv::circle(linesColor, target*factor+center, 3, cv::Scalar(250,50,250),3);
 
-    // snap target to the nearest line
-    target = getSnapPointToLine(target, lines[idx]);
+    targetDirection = target;
 
-    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
+    // snap target to the nearest line
+//    target = getSnapPointToLine(target, lines[idx]);
+
+//    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
+
+    // Do the prediction update of the Kalman filter
+//    cv::Mat predicted = kfTarget.predict();
+
+//    // Use newCentroid to correct the Kalman filter prediction
+//    kfMeasurement.at<float>(0) = target.x;
+//    kfMeasurement.at<float>(1) = target.y;
+
+//    //std::cout << std::endl << "-------" << std::endl << "ID:\t" << id_ << std::endl;
+//    //std::cout << "STATE:\t" << kf_pole_.statePost << std::endl;
+//    //std::cout << "PREDICTED:\t" << predicted << std::endl;
+//    //std::cout << "MEASURED:\t" << kf_measurement_ <<std::endl;
+
+//    cv::Mat estimated = kfTarget.correct(kfMeasurement);
+
+//    kfState = estimated;
+
+//    //std::cout << "ESTIMATED:\t" << estimated << std::endl;
+
+//    target = cv::Point2f(estimated.at<float>(0),estimated.at<float>(1));
+
+//    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,150,150),3);
 
     /// Move the target 1mt in front of the line
     // get an ortogonal vector
@@ -178,15 +211,62 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     cv::Vec2f ortoLineVector(-lineVector.val[1], lineVector.val[0]);
     ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);
 
-    target = target + cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+    cv::Point2f t1,t2;
+    t1 = target + cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+    t2 = target - cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+
+    if (cv::norm(t1) < cv::norm(t2))
+    {
+        target = t1;
+    }
+    else
+    {
+        target = t2;
+    }
 
     cv::circle(linesColor, target*factor+center, 3, cv::Scalar(0,255,0),3);
 
     std::cout << "target distance: " << cv::norm(target) << std::endl;
 
+    cv::line( linesColor,
+              target*factor+center,
+              targetDirection*factor+center,
+              cv::Scalar(0,255,0),
+              2, CV_AA );
 
     cv::imshow("lines", linesColor);
     cv::waitKey(33);
+}
+
+float normalizeAngle_PI(float angle)
+{
+    angle = angle > M_PI ? angle - 2 * M_PI : angle;
+    angle = angle <= -M_PI ? angle + 2 * M_PI : angle;
+
+    return angle;
+}
+
+void computeRThetaSigma(float &r, float &theta, float &sigma)
+{
+    float targetDirectionAngle;
+    float targetAngle;
+
+    targetDirectionAngle = std::atan2(-1 * targetDirection.y, targetDirection.x);
+    targetAngle = std::atan2(-1 * target.y, target.x);
+
+    targetDirectionAngle = normalizeAngle_PI(targetDirectionAngle);
+    targetAngle = normalizeAngle_PI(targetAngle);
+
+    r = cv::norm(target);
+    theta = targetDirectionAngle - targetAngle;
+    sigma = 0 - targetAngle;
+
+    theta = normalizeAngle_PI(theta);
+
+    std::cout << "punti: " << targetDirection << " " << target << std::endl;
+    std::cout << "angoli: " << targetDirectionAngle << " " << targetAngle << std::endl;
+    std::cout << "r-t-s: " << r << " " << theta << " " << sigma << std::endl;
+
 }
 
 int main(int argc, char** argv)
@@ -214,13 +294,39 @@ int main(int argc, char** argv)
         exit(-2);
     }
 
+    // Setup kalman filter for target
+    kfTarget.init(4,2,2);
+    kfState = cv::Mat(4, 1, CV_32F);
+    kfProcessNoise = cv::Mat(4, 1, CV_32FC1);
+    kfMeasurement = cv::Mat::zeros(2, 1, CV_32F);
+
+    kfState << target.x,target.y,0,0;
+
+    kfTarget.statePost.at<float>(0) = target.x;
+    kfTarget.statePost.at<float>(1) = target.y;
+    kfTarget.statePost.at<float>(2) = 0;
+    kfTarget.statePost.at<float>(3) = 0;
+
+
+    kfTarget.transitionMatrix = *(cv::Mat_<float>(4, 4) << 1,0,0,0,   0,1,0,0,  0,0,1,0,  0,0,0,1);
+
+    // Given that I have no control matrix, I have to rely more on the measurement.
+    // This means to have a low measureNoiseCovariance and an high processNoiseCovariance.
+    cv::setIdentity(kfTarget.measurementMatrix);
+    cv::setIdentity(kfTarget.processNoiseCov, cv::Scalar::all(1e-4));
+    cv::setIdentity(kfTarget.measurementNoiseCov, cv::Scalar::all(1e-3));
+    cv::setIdentity(kfTarget.errorCovPost, cv::Scalar::all(0.1));
+
+    kfTarget.gain *(cv::Mat_<float>(4, 2) << 0.9,0.9,0.9,0.9,0.9,0.9,0.9,0.9);
+
+
     nav::EndLineTurnMP mp(fs);
 
     ros::init(argc, argv, "egocentric_mp");
 
     ros::NodeHandle n;
 
-    ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("/Pioneer3at/cmd_vel", 1);
+    ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("/Pioneer3AT/cmd_vel", 1);
     ros::Subscriber scan_sub = n.subscribe<sensor_msgs::LaserScan>("/Pioneer3AT/laserscan", 1, scan_callback);
 
     tf::StampedTransform datamatrix_to_base_link;
@@ -233,24 +339,12 @@ int main(int argc, char** argv)
     ros::Rate loop_rate(10.0); // 100Hz
 
     //std::cout << "x;y;phi;r;sigma;theta;curvature;linear;angular;" << std::endl;
-
-    float r = 1.0, theta = 1.57, sigma = 1.57;
+    float r = 0.0, theta = 0.0, sigma = 0.0;
 
     scannedData = cv::Mat::zeros(cv::Size(800,800), CV_8UC1);
 
     while (ros::ok())
     {
-        //float v, omega;
-        //v = mp.computeLinearVelocity(r,theta,sigma);
-        //omega = mp.computeAngularVelocity(v, r, theta, sigma);
-
-        //std::cout << v << " - " << omega << std::endl;
-
-        //base_msg.linear.x = v;
-        //base_msg.angular.z = omega;
-
-        //cmd_vel_pub.publish(base_msg);
-
         ros::Time a = ros::Time::now();
         ros::Duration offset(0.5);
         ros::Duration timeout(0.15);
@@ -296,6 +390,18 @@ int main(int argc, char** argv)
 
         ros::spinOnce();
         loop_rate.sleep();
+
+        computeRThetaSigma(r, theta, sigma);
+        float v, omega;
+        v = mp.computeLinearVelocity(r,theta,sigma);
+        omega = mp.computeAngularVelocity(v, r, theta, sigma);
+
+        std::cout << v << " - " << omega << std::endl;
+
+        base_msg.linear.x = v;
+        base_msg.angular.z = omega;
+
+        cmd_vel_pub.publish(base_msg);
     }
 
     return 0;
