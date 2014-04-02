@@ -34,6 +34,8 @@ public:
                                  const float theta,
                                  const float sigma);
 
+    float getEndEpsilon() const { return end_epsilon_; }
+
 private:
 
     float               // see formula 14 of the paper
@@ -45,7 +47,8 @@ private:
         lambda_;
 
     float
-        epsilon_,
+        end_epsilon_,
+        end_gamma_,
         k3_;            // if r < epsilon -> v = k3_*r
 
     float

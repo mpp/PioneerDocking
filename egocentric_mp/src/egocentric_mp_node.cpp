@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <mutex>
 
 #include <ros/ros.h>
 #include <geometry_msgs/Twist.h>
@@ -15,8 +16,10 @@ float factor = 160.0f; // 1mt = 40px
 float imageSize = 800;
 cv::Point2f center(400,400);
 std::vector<cv::Vec4f> lines;
+nav::EndLineTurnMP *mp;
 
-cv::Point2f target, targetDirection;
+cv::Point2f target, targetDirection, datamatrixPoint;
+std::mutex targetMutex;
 
 // Kalman filter for target tracking
 cv::KalmanFilter kfTarget;
@@ -64,7 +67,7 @@ std::vector<cv::Vec4f> extractLines(const cv::Mat &scannedData)
     return lines_f;
 }
 
-int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4f> &linesVector)
+int nearestLineIndex(const cv::Point2f &point, std::vector<cv::Vec4f> &linesVector)
 {
     float minDistance = std::numeric_limits<float>::max();
     int nearestLineIndex = -1;
@@ -87,6 +90,23 @@ int nearestLineIndex(const cv::Point2f &point, const std::vector<cv::Vec4f> &lin
     }
 
     //std::cout << std::endl << minDistance << std::endl;
+
+    // expand the nearest line
+    cv::Vec4f *line = &(linesVector[nearestLineIndex]);
+    cv::Vec2f lineVector((*line)[2]-(*line)[0], (*line)[3]-(*line)[1]);
+
+    lineVector = cv::normalize(lineVector);
+
+    cv::Vec2f
+            a((*line)[0],(*line)[1]),
+            b;
+    b = a + 4.0f * lineVector;
+    a = a - 4.0f * lineVector;
+
+    (*line)[0] = a[0];
+    (*line)[1] = a[1];
+    (*line)[2] = b[0];
+    (*line)[3] = b[1];
 
     return nearestLineIndex;
 }
@@ -121,6 +141,87 @@ void morphClosure(const cv::Mat &src, cv::Mat &dst)
     cv::erode(tmp, dst, element);
 }
 
+float normalizeAngle_PI(float angle)
+{
+    angle = angle > M_PI ? angle - 2 * M_PI : angle;
+    angle = angle <= -M_PI ? angle + 2 * M_PI : angle;
+
+    return angle;
+}
+
+void computeRThetaSigma(float &r, float &theta, float &sigma,
+                        const cv::Point2f &robotPosition = cv::Point2f(0.0f,0.0f),
+                        const float &robotBearing = 0.0f )
+{
+    float targetDirectionAngle;
+    float targetAngle;
+    targetMutex.lock();
+    cv::Point2f currentTarget = target;
+    cv::Point2f currentTargetDirection = targetDirection;
+    targetMutex.unlock();
+
+    targetDirectionAngle = std::atan2(-1 * (currentTargetDirection.y - robotPosition.y), (currentTargetDirection.x - robotPosition.x));
+    targetAngle = std::atan2(-1 * (currentTarget.y - robotPosition.y), (currentTarget.x - robotPosition.x));
+
+    targetDirectionAngle = normalizeAngle_PI(targetDirectionAngle - robotBearing);
+    targetAngle = normalizeAngle_PI(targetAngle);
+
+    r = cv::norm(currentTarget - robotPosition);
+    theta = targetDirectionAngle - targetAngle;
+    sigma = 0 - targetAngle;
+
+    theta = normalizeAngle_PI(theta);
+
+    //std::cout << "punti: " << targetDirection << " " << target << std::endl;
+    //std::cout << "angoli: " << targetDirectionAngle << " " << targetAngle << std::endl;
+    //std::cout << "r-t-s: " << r << " " << theta << " " << sigma << std::endl;
+
+}
+
+void drawPrevPath(cv::Mat &img)
+{
+    float dt = 0.01f;
+    float currentTime = 0.0f;
+    float maxTime = 200;
+    cv::Point2f currentPosition(0.0f, 0.0f);
+    float currentBearing = 0.0f;
+
+    while (currentTime < maxTime)
+    {
+        currentTime = currentTime + dt;
+        float r,theta,sigma;
+
+        computeRThetaSigma(r, theta, sigma, currentPosition, currentBearing);
+
+        float
+            v = 0.0f,
+            omega = 0.0f;
+        v = mp->computeLinearVelocity(r,theta,sigma);
+        omega = mp->computeAngularVelocity(v, r, theta, sigma);
+
+        currentPosition.x = currentPosition.x + std::cos(currentBearing) * v * dt;
+        currentPosition.y = currentPosition.y + std::sin(currentBearing) * v * dt;
+        currentBearing = currentBearing - omega * dt;
+
+        cv::Point2f pt = currentPosition * factor + center;
+        if (pt.x >= 0 && pt.x < img.cols && pt.y >= 0 && pt.y <= img.rows)
+        {
+            img.at<cv::Vec3b>(pt)[0] = 200;
+            img.at<cv::Vec3b>(pt)[1] = 200;
+            img.at<cv::Vec3b>(pt)[2] = 200;
+        }
+        else
+        {
+            return;
+        }
+
+        if (v == 0.0f && omega == 0.0f || r <= mp->getEndEpsilon())
+        {
+            return;
+        }
+    }
+}
+
 void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
     // get laser points
@@ -141,6 +242,9 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 
         angle = angle + msg->angle_increment;
     }
+    targetMutex.lock();
+    cv::Point2f currentTarget = datamatrixPoint;
+    targetMutex.unlock();
 
     // perform a closure (dilation+erosion)
     cv::Mat closedScannedData;
@@ -150,8 +254,8 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     lines = extractLines(closedScannedData);
 
     // get nearest line index
-    int idx = nearestLineIndex(target, lines);
-    float distance = pointLineDistance(target, lines[idx]);
+    int idx = nearestLineIndex(currentTarget, lines);
+    float distance = pointLineDistance(currentTarget, lines[idx]);
 
     //std::cout << idx << " - (" << target.x << "," << target.y << ")" << " - " << lines[idx] << " - " << distance << std::endl;
 
@@ -172,16 +276,14 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
       cv::circle(linesColor, cv::Point2f(l[2], l[3])*factor+center, 2, cv::Scalar(100,200,200));
     }
 
-    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(250,50,250),3);
-
-    targetDirection = target;
+    cv::circle(linesColor, currentTarget*factor+center, 3, cv::Scalar(250,50,250),3);
 
     // snap target to the nearest line
-//    target = getSnapPointToLine(target, lines[idx]);
+    currentTarget = getSnapPointToLine(currentTarget, lines[idx]);
 
-//    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,0,0),3);
+    cv::circle(linesColor, currentTarget*factor+center, 3, cv::Scalar(255,0,0),3);
 
-    // Do the prediction update of the Kalman filter
+//    // Do the prediction update of the Kalman filter
 //    cv::Mat predicted = kfTarget.predict();
 
 //    // Use newCentroid to correct the Kalman filter prediction
@@ -200,8 +302,12 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 //    //std::cout << "ESTIMATED:\t" << estimated << std::endl;
 
 //    target = cv::Point2f(estimated.at<float>(0),estimated.at<float>(1));
+    cv::Point2f currentTargetDirection = currentTarget;
+    targetMutex.lock();
+    targetDirection = currentTargetDirection;
+    targetMutex.unlock();
 
-//    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(255,150,150),3);
+    cv::circle(linesColor, currentTarget*factor+center, 3, cv::Scalar(255,150,150),3);
 
     /// Move the target 1mt in front of the line
     // get an ortogonal vector
@@ -212,68 +318,46 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);
 
     cv::Point2f t1,t2;
-    t1 = target + cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
-    t2 = target - cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+    t1 = currentTarget + 0.5 * cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+    t2 = currentTarget - 0.5 * cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
 
     if (cv::norm(t1) < cv::norm(t2))
     {
-        target = t1;
+        currentTarget = t1;
     }
     else
     {
-        target = t2;
+        currentTarget = t2;
     }
 
-    cv::circle(linesColor, target*factor+center, 3, cv::Scalar(0,255,0),3);
+    targetMutex.lock();
+    target = currentTarget;
+    targetMutex.unlock();
 
-    std::cout << "target distance: " << cv::norm(target) << std::endl;
+    cv::circle(linesColor, currentTarget*factor+center, 3, cv::Scalar(0,255,0),3);
+
+    std::cout << "target distance: " << cv::norm(currentTarget) << std::endl;
 
     cv::line( linesColor,
-              target*factor+center,
-              targetDirection*factor+center,
+              currentTarget*factor+center,
+              currentTargetDirection*factor+center,
               cv::Scalar(0,255,0),
               2, CV_AA );
+
+    drawPrevPath(linesColor);
 
     cv::imshow("lines", linesColor);
     cv::waitKey(33);
 }
 
-float normalizeAngle_PI(float angle)
-{
-    angle = angle > M_PI ? angle - 2 * M_PI : angle;
-    angle = angle <= -M_PI ? angle + 2 * M_PI : angle;
-
-    return angle;
-}
-
-void computeRThetaSigma(float &r, float &theta, float &sigma)
-{
-    float targetDirectionAngle;
-    float targetAngle;
-
-    targetDirectionAngle = std::atan2(-1 * targetDirection.y, targetDirection.x);
-    targetAngle = std::atan2(-1 * target.y, target.x);
-
-    targetDirectionAngle = normalizeAngle_PI(targetDirectionAngle);
-    targetAngle = normalizeAngle_PI(targetAngle);
-
-    r = cv::norm(target);
-    theta = targetDirectionAngle - targetAngle;
-    sigma = 0 - targetAngle;
-
-    theta = normalizeAngle_PI(theta);
-
-    std::cout << "punti: " << targetDirection << " " << target << std::endl;
-    std::cout << "angoli: " << targetDirectionAngle << " " << targetAngle << std::endl;
-    std::cout << "r-t-s: " << r << " " << theta << " " << sigma << std::endl;
-
-}
-
 int main(int argc, char** argv)
 {
     cv::namedWindow("lines");
-    target.x = 0.0f;
-    target.y = 0.0f;
+    targetMutex.lock();
+    target = cv::Point2f(0.0f, 0.0f);
+    targetDirection = cv::Point2f(0.0f, 0.0f);
+    datamatrixPoint = cv::Point2f(0.0f, 0.0f);
+    targetMutex.unlock();
 
     std::cout << std::fixed << std::setprecision(6);
     setlocale(LC_NUMERIC, "C");
@@ -294,39 +378,40 @@ int main(int argc, char** argv)
         exit(-2);
     }
 
-    // Setup kalman filter for target
-    kfTarget.init(4,2,2);
-    kfState = cv::Mat(4, 1, CV_32F);
-    kfProcessNoise = cv::Mat(4, 1, CV_32FC1);
-    kfMeasurement = cv::Mat::zeros(2, 1, CV_32F);
+    mp = new nav::EndLineTurnMP(fs);
 
-    kfState << target.x,target.y,0,0;
+//    // Setup kalman filter for target
+//    kfTarget.init(4,2,2);
+//    kfState = cv::Mat(4, 1, CV_32F);
+//    kfProcessNoise = cv::Mat(4, 1, CV_32FC1);
+//    kfMeasurement = cv::Mat::zeros(2, 1, CV_32F);
 
-    kfTarget.statePost.at<float>(0) = target.x;
-    kfTarget.statePost.at<float>(1) = target.y;
-    kfTarget.statePost.at<float>(2) = 0;
-    kfTarget.statePost.at<float>(3) = 0;
+//    kfState << target.x,target.y,0,0;
 
-
-    kfTarget.transitionMatrix = *(cv::Mat_<float>(4, 4) << 1,0,0,0,   0,1,0,0,  0,0,1,0,  0,0,0,1);
-
-    // Given that I have no control matrix, I have to rely more on the measurement.
-    // This means to have a low measureNoiseCovariance and an high processNoiseCovariance.
-    cv::setIdentity(kfTarget.measurementMatrix);
-    cv::setIdentity(kfTarget.processNoiseCov, cv::Scalar::all(1e-4));
-    cv::setIdentity(kfTarget.measurementNoiseCov, cv::Scalar::all(1e-3));
-    cv::setIdentity(kfTarget.errorCovPost, cv::Scalar::all(0.1));
-
-    kfTarget.gain *(cv::Mat_<float>(4, 2) << 0.9,0.9,0.9,0.9,0.9,0.9,0.9,0.9);
+//    kfTarget.statePost.at<float>(0) = target.x;
+//    kfTarget.statePost.at<float>(1) = target.y;
+//    kfTarget.statePost.at<float>(2) = 0;
+//    kfTarget.statePost.at<float>(3) = 0;
 
 
-    nav::EndLineTurnMP mp(fs);
+//    kfTarget.transitionMatrix = *(cv::Mat_<float>(4, 4) << 1,0,0,0,   0,1,0,0,  0,0,1,0,  0,0,0,1);
+
+//    // Given that I have no control matrix, I have to rely more on the measurement.
+//    // This means to have a low measureNoiseCovariance and an high processNoiseCovariance.
+//    cv::setIdentity(kfTarget.measurementMatrix);
+//    cv::setIdentity(kfTarget.processNoiseCov, cv::Scalar::all(1e-4));
+//    cv::setIdentity(kfTarget.measurementNoiseCov, cv::Scalar::all(1e-3));
+//    cv::setIdentity(kfTarget.errorCovPost, cv::Scalar::all(0.1));
+
+//    kfTarget.gain *(cv::Mat_<float>(4, 2) << 0.9,0.9,0.9,0.9,0.9,0.9,0.9,0.9);
+
+
 
     ros::init(argc, argv, "egocentric_mp");
 
     ros::NodeHandle n;
 
-    ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("/Pioneer3AT/cmd_vel", 1);
+    ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("/Pioneer3AT/rqt/cmd_vel", 1);
     ros::Subscriber scan_sub = n.subscribe<sensor_msgs::LaserScan>("/Pioneer3AT/laserscan", 1, scan_callback);
 
     tf::StampedTransform datamatrix_to_base_link;
@@ -335,8 +420,8 @@ int main(int argc, char** argv)
 
     geometry_msgs::Twist base_msg;
 
-    float frequency = 33;
-    ros::Rate loop_rate(10.0); // 100Hz
+    float frequency = 10;
+    ros::Rate loop_rate(frequency);
 
     //std::cout << "x;y;phi;r;sigma;theta;curvature;linear;angular;" << std::endl;
     float r = 0.0, theta = 0.0, sigma = 0.0;
@@ -346,31 +431,31 @@ int main(int argc, char** argv)
     while (ros::ok())
     {
         ros::Time a = ros::Time::now();
-        ros::Duration offset(0.5);
-        ros::Duration timeout(0.15);
+        ros::Duration offset(1.5);
+        ros::Duration timeout(0.35);
         bool isDatamatrix = false;
 
-        while (!isDatamatrix)
-        {
+        //while (!isDatamatrix)
+        //{
 
             a = ros::Time::now() - offset;
             isDatamatrix = tfListener.waitForTransform("camera_link",
                                                        "datamatrix_frame",
-                                                       a,
+                                                       ros::Time(0), //a,
                                                        timeout);
 
-            ROS_INFO("no transform yet");
-        }
+            //ROS_INFO("no transform yet");
+        //}
 
         if (isDatamatrix)
         {
 
-            ROS_INFO("Setting target");
+            //ROS_INFO("Setting target");
 
             a = ros::Time::now() - offset;
             tfListener.lookupTransform("camera_link",
                                        "datamatrix_frame",
-                                       a,
+                                       ros::Time(0), //a,
                                        datamatrix_to_base_link);
 
             tf::Point a,b;
@@ -380,29 +465,41 @@ int main(int argc, char** argv)
             a.setZ(0);
             b = datamatrix_to_base_link(a);
 
-            target.x = b.x();
-            target.y = -1 * b.y();
+            datamatrixPoint = cv::Point2f(b.x(), -1 * b.y());
         }
         else
         {
-            ROS_INFO("tf not available");
+            //ROS_INFO("tf not available");
         }
 
         ros::spinOnce();
         loop_rate.sleep();
 
-        computeRThetaSigma(r, theta, sigma);
-        float v, omega;
-        v = mp.computeLinearVelocity(r,theta,sigma);
-        omega = mp.computeAngularVelocity(v, r, theta, sigma);
+        float
+                v = 0.0f,
+                omega = 0.0f;
+        if (isDatamatrix)
+        {
+            computeRThetaSigma(r, theta, sigma);
+            std::cout << "r-t-s: " << r << " " << theta << " " << sigma << std::endl;
+            v = mp->computeLinearVelocity(r,theta,sigma);
+            omega = mp->computeAngularVelocity(v, r, theta, sigma);
 
-        std::cout << v << " - " << omega << std::endl;
+            if (r <= mp->getEndEpsilon())
+            {
+                v = 0.0f;
+            }
+        }
+
+        std::cout << "(linear, angular) = (" << v << ", " << omega << ")" << std::endl;
 
         base_msg.linear.x = v;
         base_msg.angular.z = omega;
 
+
         cmd_vel_pub.publish(base_msg);
     }
 
+    delete mp;
     return 0;
 }

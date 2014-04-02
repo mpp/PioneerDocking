@@ -7,7 +7,8 @@ EndLineTurnMP::EndLineTurnMP(const cv::FileStorage &fs)
       k2_(fs["Uturn"]["k2"]),
       k3_(fs["Uturn"]["k3"]),
       kMaxV(fs["globalMP"]["maxV"]),
-      epsilon_(fs["Uturn"]["endEpsilon"]),
+      end_epsilon_(fs["Uturn"]["endEpsilon"]),
+      end_gamma_(fs["Uturn"]["endGamma"]),
       beta_(fs["Uturn"]["beta"]),
       lambda_(fs["Uturn"]["lambda"])
 {
@@ -25,7 +26,7 @@ float EndLineTurnMP::computeLinearVelocity(const float r,
 
     float v = 0.0f;
 
-    if (r < epsilon_)
+    if (r < end_epsilon_)
     {
         v = k3_ * r;
     }
@@ -37,12 +38,36 @@ float EndLineTurnMP::computeLinearVelocity(const float r,
     return v;
 }
 
+
+float normalizeAngle_PI(float angle)
+{
+    angle = angle > M_PI ? angle - 2 * M_PI : angle;
+    angle = angle <= -M_PI ? angle + 2 * M_PI : angle;
+
+    return angle;
+}
+
 float EndLineTurnMP::computeAngularVelocity(const float v,
                                             const float r,
                                             const float theta,
                                             const float sigma)
 {
     float omega = curvature_ * v;
+
+    if (r <= end_epsilon_)
+    {
+        // lentamente mi oriento correttamente
+        float diff = normalizeAngle_PI(theta - sigma);
+
+        if (diff > end_gamma_)
+        {
+            omega = diff < 0 ? 0.2 : -0.2;
+        }
+        else
+        {
+            omega = 0;
+        }
+    }
 
     return omega;
 }
