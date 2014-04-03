@@ -431,7 +431,7 @@ int main(int argc, char** argv)
     while (ros::ok())
     {
         ros::Time a = ros::Time::now();
-        ros::Duration offset(1.5);
+        ros::Duration offset(0);
         ros::Duration timeout(0.35);
         bool isDatamatrix = false;
 
@@ -469,7 +469,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            //ROS_INFO("tf not available");
+            ROS_INFO("tf not available");
         }
 
         ros::spinOnce();

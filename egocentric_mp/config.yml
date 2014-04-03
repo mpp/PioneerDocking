@@ -158,10 +158,10 @@ lineExtractor:
 ##---------------------------------------------------------------------------##
 globalMP:
     # maximum linear velocity m/s
-    maxV: 0.5 
+    maxV: 0.2
 
     # maximum angular velocity rad/s
-    maxOmega: 0.5
+    maxOmega: 0.2
 
 # Following the indication of: http://www.inaut.unsj.edu.ar/Files/Ca1277_03.pdf 
 lineFollower: 

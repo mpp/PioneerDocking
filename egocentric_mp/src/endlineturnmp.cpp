@@ -61,7 +61,7 @@ float EndLineTurnMP::computeAngularVelocity(const float v,
 
         if (diff > end_gamma_)
         {
-            omega = diff < 0 ? 0.2 : -0.2;
+            omega = diff < 0 ? -0.05 : 0.05;
         }
         else
         {
