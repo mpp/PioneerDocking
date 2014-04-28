@@ -161,7 +161,7 @@ globalMP:
     maxV: 0.2
 
     # maximum angular velocity rad/s
-    maxOmega: 0.2
+    maxOmega: 0.05
 
 # Following the indication of: http://www.inaut.unsj.edu.ar/Files/Ca1277_03.pdf 
 lineFollower: 
@@ -179,11 +179,11 @@ lineFollower:
     
 # Following the indication of: http://web.eecs.umich.edu/~kuipers/papers/Park-icra-11.pdf
 Uturn:
-    k1: 2
-    k2: 2
+    k1: 0.5
+    k2: 5
     k3:  0.5
-    beta: 0.4
-    lambda: 2
+    beta: 0.2
+    lambda: 1
     headPoleThreshold: 2.5
     endEpsilon: 0.15
     endGamma: 0.05

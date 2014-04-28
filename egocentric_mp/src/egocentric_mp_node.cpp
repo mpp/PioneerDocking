@@ -431,17 +431,16 @@ int main(int argc, char** argv)
     while (ros::ok())
     {
         ros::Time a = ros::Time::now();
-        ros::Duration offset(0);
-        ros::Duration timeout(0.35);
+        ros::Duration timeout(0.2);
         bool isDatamatrix = false;
 
         //while (!isDatamatrix)
         //{
 
-            a = ros::Time::now() - offset;
+            a = ros::Time::now();
             isDatamatrix = tfListener.waitForTransform("camera_link",
                                                        "datamatrix_frame",
-                                                       ros::Time(0), //a,
+                                                       a,
                                                        timeout);
 
             //ROS_INFO("no transform yet");
@@ -452,20 +451,20 @@ int main(int argc, char** argv)
 
             //ROS_INFO("Setting target");
 
-            a = ros::Time::now() - offset;
+            //a = ros::Time::now();
             tfListener.lookupTransform("camera_link",
                                        "datamatrix_frame",
-                                       ros::Time(0), //a,
+                                       a,
                                        datamatrix_to_base_link);
 
-            tf::Point a,b;
+            tf::Point pa,pb;
 
-            a.setX(0);
-            a.setY(0);
-            a.setZ(0);
-            b = datamatrix_to_base_link(a);
+            pa.setX(0);
+            pa.setY(0);
+            pa.setZ(0);
+            pb = datamatrix_to_base_link(pa);
 
-            datamatrixPoint = cv::Point2f(b.x(), -1 * b.y());
+            datamatrixPoint = cv::Point2f(pb.x(), -1 * pb.y());
         }
         else
         {
@@ -478,6 +477,7 @@ int main(int argc, char** argv)
         float
                 v = 0.0f,
                 omega = 0.0f;
+        bool finish = false;
         if (isDatamatrix)
         {
             computeRThetaSigma(r, theta, sigma);
@@ -488,6 +488,8 @@ int main(int argc, char** argv)
             if (r <= mp->getEndEpsilon())
             {
                 v = 0.0f;
+                omega = 0.0f;
+                finish = true;
             }
         }
 
@@ -498,8 +500,11 @@ int main(int argc, char** argv)
 
 
         cmd_vel_pub.publish(base_msg);
+        if (finish)
+        {
+            ROS_INFO("Done.");
+            break;
+        }
     }
-
-    delete mp;
     return 0;
 }
