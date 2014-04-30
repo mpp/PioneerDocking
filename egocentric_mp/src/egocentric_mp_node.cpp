@@ -27,6 +27,8 @@ cv::Mat_<float> kfState;
 cv::Mat_<float> kfMeasurement;
 cv::Mat kfProcessNoise;
 
+bool screen = true;
+
 float pointLineDistance(const cv::Point2f &point, const cv::Vec4i line)
 {
     cv::Point pt = point;
@@ -250,12 +252,14 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     cv::Mat closedScannedData;
     morphClosure(scannedData, closedScannedData);
 
+    targetMutex.lock();
     // extract lines from laser points
     lines = extractLines(closedScannedData);
 
     // get nearest line index
     int idx = nearestLineIndex(currentTarget, lines);
     float distance = pointLineDistance(currentTarget, lines[idx]);
+    targetMutex.unlock();
 
     //std::cout << idx << " - (" << target.x << "," << target.y << ")" << " - " << lines[idx] << " - " << distance << std::endl;
 
@@ -345,6 +349,12 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
               2, CV_AA );
 
     drawPrevPath(linesColor);
+
+    if (screen)
+    {
+        cv::imwrite("_" + std::to_string(ros::Time::now().toSec()) + ".png", linesColor);
+        screen = false;
+    }
 
     cv::imshow("lines", linesColor);
     cv::waitKey(33);
@@ -493,10 +503,15 @@ int main(int argc, char** argv)
             }
         }
 
-        std::cout << "(linear, angular) = (" << v << ", " << omega << ")" << std::endl;
 
+        if (omega == 0.15)
+        {
+            //v = 0.0f;
+        }
         base_msg.linear.x = v;
         base_msg.angular.z = omega;
+
+        std::cout << "(linear, angular) = (" << v << ", " << omega << ")" << std::endl;
 
 
         cmd_vel_pub.publish(base_msg);
@@ -506,5 +521,42 @@ int main(int argc, char** argv)
             break;
         }
     }
+
+    ROS_INFO("Advance over the coil.");
+
+    float meters = 0.15 + cv::norm(target);
+    std::cout << "Distance to travel: " << meters << std::endl;
+    float velocity = 0.05;
+
+    float duration = meters / velocity;
+
+    ros::Duration a(duration);
+    ros::Time end = ros::Time::now() + a;
+    while (ros::Time::now() <= end)
+    {
+        base_msg.linear.x = velocity;
+        base_msg.angular.z = 0.0f;
+
+        cmd_vel_pub.publish(base_msg);
+        ros::spinOnce();
+        loop_rate.sleep();
+    }
+
+
+    base_msg.linear.x = 0.0f;
+    base_msg.angular.z = 0.0f;
+
+    cmd_vel_pub.publish(base_msg);
+    ros::spinOnce();
+    loop_rate.sleep();
+    cmd_vel_pub.publish(base_msg);
+    ros::spinOnce();
+    loop_rate.sleep();
+    cmd_vel_pub.publish(base_msg);
+    ros::spinOnce();
+    loop_rate.sleep();
+
+    ROS_INFO("Stop. Is the robot over the coil?");
+
     return 0;
 }
