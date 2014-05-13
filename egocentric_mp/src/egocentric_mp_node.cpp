@@ -28,6 +28,8 @@ cv::Mat_<float> kfMeasurement;
 cv::Mat kfProcessNoise;
 
 bool screen = true;
+bool check = false;
+bool checkTarget = false;
 
 float pointLineDistance(const cv::Point2f &point, const cv::Vec4i line)
 {
@@ -226,6 +228,9 @@ void drawPrevPath(cv::Mat &img)
 
 void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
+    if (!check)
+        return;
+
     // get laser points
     scannedData = cv::Mat::zeros(cv::Size(800,800), CV_8UC1);
 
@@ -356,6 +361,8 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
         screen = false;
     }
 
+    checkTarget = true;
+
     cv::imshow("lines", linesColor);
     cv::waitKey(33);
 }
@@ -475,6 +482,7 @@ int main(int argc, char** argv)
             pb = datamatrix_to_base_link(pa);
 
             datamatrixPoint = cv::Point2f(pb.x(), -1 * pb.y());
+            check = true;
         }
         else
         {
@@ -488,7 +496,7 @@ int main(int argc, char** argv)
                 v = 0.0f,
                 omega = 0.0f;
         bool finish = false;
-        if (isDatamatrix)
+        if (isDatamatrix && checkTarget)
         {
             computeRThetaSigma(r, theta, sigma);
             std::cout << "r-t-s: " << r << " " << theta << " " << sigma << std::endl;
@@ -524,7 +532,7 @@ int main(int argc, char** argv)
 
     ROS_INFO("Advance over the coil.");
 
-    float meters = 0.15 + cv::norm(target);
+    float meters = 0.10 + cv::norm(target);
     std::cout << "Distance to travel: " << meters << std::endl;
     float velocity = 0.05;
 
