@@ -57,12 +57,12 @@ float EndLineTurnMP::computeAngularVelocity(const float v,
 
     float sign = omega>0 ? 1 : -1;
 
-    omega = std::abs(omega)>0.15f ? sign*0.15f : omega;
+    omega = std::abs(omega)>0.1f ? sign*0.1f : omega;
 
     if (r <= end_epsilon_)
     {
         // lentamente mi oriento correttamente
-        float diff = normalizeAngle_PI(theta - sigma);
+        float diff = normalizeAngle_PI(/*theta - */sigma);
 
         if (diff > end_gamma_)
         {

@@ -20,6 +20,11 @@ nav::EndLineTurnMP *mp;
 
 cv::Point2f target, targetDirection, datamatrixPoint;
 std::mutex targetMutex;
+std::mutex datamatrixMutex;
+
+float XtionOffset_x = 0.13; // the ASUS Xtion is 0.13cm axis x forward from the center of the robot
+float XtionOffset_y = 0.0;// ignore what follow :) -0.025; // the tf that arrive from the datamatrix package as the reference frame on the IR projector of the Xtion which is 2.5 cm right than the Xtion center
+float HokuyoOffset = 0.33; // the ASUS Xtion is 0.13cm axis x forward from the center of the robot
 
 // Kalman filter for target tracking
 cv::KalmanFilter kfTarget;
@@ -240,7 +245,7 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
         float range = msg->ranges[i];
         if (range >= msg->range_min && range <= msg->range_max)
         {
-            cv::Point2f pt(range * std::cos(angle), -1 * range * std::sin(angle));
+            cv::Point2f pt((range * std::cos(angle)) + HokuyoOffset, -1 * range * std::sin(angle));
             pt = pt * factor + center;
 
             if (pt.x >= 0 && pt.x <= scannedData.cols && pt.y >= 0 && pt.y <= scannedData.rows)
@@ -249,26 +254,26 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 
         angle = angle + msg->angle_increment;
     }
-    targetMutex.lock();
+    datamatrixMutex.lock();
     cv::Point2f currentTarget = datamatrixPoint;
-    targetMutex.unlock();
+    datamatrixMutex.unlock();
 
-    // perform a closure (dilation+erosion)
+    /// perform a closure (dilation+erosion)
     cv::Mat closedScannedData;
     morphClosure(scannedData, closedScannedData);
 
     targetMutex.lock();
-    // extract lines from laser points
+    /// extract lines from laser points
     lines = extractLines(closedScannedData);
 
-    // get nearest line index
+    /// get nearest line index
     int idx = nearestLineIndex(currentTarget, lines);
     float distance = pointLineDistance(currentTarget, lines[idx]);
     targetMutex.unlock();
 
     //std::cout << idx << " - (" << target.x << "," << target.y << ")" << " - " << lines[idx] << " - " << distance << std::endl;
 
-    // plot lines, points...
+    /// plot lines, points...
     cv::Mat linesColor;
     cv::cvtColor(scannedData, linesColor, CV_GRAY2BGR);
 
@@ -287,30 +292,11 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
 
     cv::circle(linesColor, currentTarget*factor+center, 3, cv::Scalar(250,50,250),3);
 
-    // snap target to the nearest line
+    /// snap target to the nearest line
     currentTarget = getSnapPointToLine(currentTarget, lines[idx]);
 
     cv::circle(linesColor, currentTarget*factor+center, 3, cv::Scalar(255,0,0),3);
 
-//    // Do the prediction update of the Kalman filter
-//    cv::Mat predicted = kfTarget.predict();
-
-//    // Use newCentroid to correct the Kalman filter prediction
-//    kfMeasurement.at<float>(0) = target.x;
-//    kfMeasurement.at<float>(1) = target.y;
-
-//    //std::cout << std::endl << "-------" << std::endl << "ID:\t" << id_ << std::endl;
-//    //std::cout << "STATE:\t" << kf_pole_.statePost << std::endl;
-//    //std::cout << "PREDICTED:\t" << predicted << std::endl;
-//    //std::cout << "MEASURED:\t" << kf_measurement_ <<std::endl;
-
-//    cv::Mat estimated = kfTarget.correct(kfMeasurement);
-
-//    kfState = estimated;
-
-//    //std::cout << "ESTIMATED:\t" << estimated << std::endl;
-
-//    target = cv::Point2f(estimated.at<float>(0),estimated.at<float>(1));
     cv::Point2f currentTargetDirection = currentTarget;
     targetMutex.lock();
     targetDirection = currentTargetDirection;
@@ -326,9 +312,13 @@ void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
     cv::Vec2f ortoLineVector(-lineVector.val[1], lineVector.val[0]);
     ortoLineVector = ortoLineVector / cv::norm(ortoLineVector);
 
+    // The target coil is 50 cm in front of the wall
+    float targetOffset = 0.5;
+    float halfRobot = 0.26;
+
     cv::Point2f t1,t2;
-    t1 = currentTarget + 0.5 * cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
-    t2 = currentTarget - 0.5 * cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+    t1 = currentTarget + (targetOffset + halfRobot) * cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
+    t2 = currentTarget - (targetOffset + halfRobot) * cv::Point2f(ortoLineVector[0], ortoLineVector[1]);
 
     if (cv::norm(t1) < cv::norm(t2))
     {
@@ -468,6 +458,7 @@ int main(int argc, char** argv)
 
             //ROS_INFO("Setting target");
 
+            // Do not reset a with the new clock time!!
             //a = ros::Time::now();
             tfListener.lookupTransform("camera_link",
                                        "datamatrix_frame",
@@ -481,7 +472,14 @@ int main(int argc, char** argv)
             pa.setZ(0);
             pb = datamatrix_to_base_link(pa);
 
-            datamatrixPoint = cv::Point2f(pb.x(), -1 * pb.y());
+            cv::Point2f dbPoint;
+            datamatrixMutex.lock();
+            datamatrixPoint = cv::Point2f(pb.x() + XtionOffset_x, -1 * pb.y() + XtionOffset_y);
+            dbPoint = datamatrixPoint;
+            datamatrixMutex.unlock();
+
+            std::cout << "datamatrix point: " << dbPoint << std::endl;
+
             check = true;
         }
         else
@@ -503,7 +501,13 @@ int main(int argc, char** argv)
             v = mp->computeLinearVelocity(r,theta,sigma);
             omega = mp->computeAngularVelocity(v, r, theta, sigma);
 
-            if (r <= mp->getEndEpsilon())
+            std::cout << "Sigma: " << sigma << std::endl;
+            if (r <= mp->getEndEpsilon() && std::abs(sigma) > 0.013)
+            {
+                v = 0.0f;
+                omega = sigma >= 0 ? -0.05 : 0.05;
+            }
+            else if (r <= mp->getEndEpsilon() && std::abs(sigma) <= 0.02)
             {
                 v = 0.0f;
                 omega = 0.0f;
@@ -532,7 +536,7 @@ int main(int argc, char** argv)
 
     ROS_INFO("Advance over the coil.");
 
-    float meters = 0.10 + cv::norm(target);
+    float meters = 0.05 + cv::norm(target);
     std::cout << "Distance to travel: " << meters << std::endl;
     float velocity = 0.05;
 
