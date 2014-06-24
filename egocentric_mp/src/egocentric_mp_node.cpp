@@ -536,7 +536,7 @@ int main(int argc, char** argv)
 
     ROS_INFO("Advance over the coil.");
 
-    float meters = 0.05 + cv::norm(target);
+    float meters = /*0.05 + */cv::norm(target);
     std::cout << "Distance to travel: " << meters << std::endl;
     float velocity = 0.05;
 
@@ -544,7 +544,8 @@ int main(int argc, char** argv)
 
     ros::Duration a(duration);
     ros::Time end = ros::Time::now() + a;
-    while (ros::Time::now() <= end)
+    float epsilon = 0.01f;
+    while (ros::Time::now() <= end /*&& meters > epsilon*/)
     {
         base_msg.linear.x = velocity;
         base_msg.angular.z = 0.0f;
@@ -552,6 +553,7 @@ int main(int argc, char** argv)
         cmd_vel_pub.publish(base_msg);
         ros::spinOnce();
         loop_rate.sleep();
+        //meters = cv::norm(target);
     }
 
 
